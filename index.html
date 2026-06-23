@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Engineering Calendar</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f7;color:#1d1d1f;min-height:100vh}
+#root{background:#fff;min-height:100vh}
+.app-shell{display:flex;flex-direction:column;min-height:100vh}
+.left-panel{background:#fff;padding-bottom:1rem}
+.right-panel{padding:1rem;background:#f5f5f7;min-height:100vh}
+.right-panel-inner{max-width:900px}
+.cal-grid-cell{min-height:72px}
+@media(min-width:768px){
+  .app-shell{flex-direction:row;align-items:flex-start}
+  .left-panel{width:380px;flex-shrink:0;border-right:1px solid #e5e5ea;position:sticky;top:0;height:100vh;overflow-y:auto}
+  .right-panel{flex:1;padding:24px;min-height:100vh;overflow-y:auto}
+  .cal-grid-cell{min-height:80px}
+  .day-detail-desktop{max-width:800px}
+  .summary-desktop{max-width:900px}
+}
+@media(max-width:767px){
+  .right-panel{padding:0;background:#fff;min-height:0}
+  .mobile-calendar-detail{padding:12px}
+}
+button{font-family:inherit;background:#fff;border:0.5px solid #d1d1d6;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:14px;color:#1d1d1f;transition:all 0.15s}
+button:active{transform:scale(0.97);background:#f2f2f7}
+button:disabled{opacity:0.4;cursor:default}
+input,select,textarea{font-family:inherit;font-size:14px;border:0.5px solid #d1d1d6;border-radius:8px;padding:9px 12px;width:100%;outline:none;background:#fff;color:#1d1d1f;transition:border 0.15s;-webkit-appearance:none;appearance:none}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%23888' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+input:focus,select:focus,textarea:focus{border-color:#0071e3;box-shadow:0 0 0 3px rgba(0,113,227,0.15)}
+textarea{resize:none;line-height:1.5}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.pulse{animation:pulse 1.5s ease-in-out infinite}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:flex-end;justify-content:center;z-index:999}
+.modal{background:#fff;border-radius:20px 20px 0 0;padding:20px 16px 32px;width:100%;max-width:480px;max-height:92vh;overflow-y:auto}
+.modal-center{align-items:center;padding:20px}
+.modal-center .modal{border-radius:16px;max-width:360px;padding:24px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+firebase.initializeApp({
+  apiKey:"AIzaSyBTjoBa6FCbf3w0jyMAFEjrDyDCmhiX14w",
+  authDomain:"engineering-calendar-4144a.firebaseapp.com",
+  databaseURL:"https://engineering-calendar-4144a-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:"engineering-calendar-4144a",
+  storageBucket:"engineering-calendar-4144a.firebasestorage.app",
+  messagingSenderId:"712584967661",
+  appId:"1:712584967661:web:4f0691f628b3c6189523e4"
+});
+const db=firebase.database(), fref=p=>db.ref(p);
+
+const {useState,useEffect,useRef}=React, S=React.createElement;
+
+const COLORS=[
+  {id:'indigo',dot:'#3730A3',bg:'#E0E7FF',text:'#312E81',border:'#A5B4FC'},
+  {id:'teal',dot:'#0F766E',bg:'#CCFBF1',text:'#134E4A',border:'#5EEAD4'},
+  {id:'rose',dot:'#BE123C',bg:'#FFE4E6',text:'#9F1239',border:'#FDA4AF'},
+  {id:'blue',dot:'#1D4ED8',bg:'#DBEAFE',text:'#1E3A8A',border:'#93C5FD'},
+  {id:'amber',dot:'#B45309',bg:'#FEF3C7',text:'#92400E',border:'#FCD34D'},
+  {id:'emerald',dot:'#065F46',bg:'#D1FAE5',text:'#064E3B',border:'#6EE7B7'},
+  {id:'fuchsia',dot:'#86198F',bg:'#FAE8FF',text:'#701A75',border:'#E879F9'},
+  {id:'orange',dot:'#C2410C',bg:'#FFEDD5',text:'#9A3412',border:'#FB923C'},
+  {id:'cyan',dot:'#0E7490',bg:'#CFFAFE',text:'#164E63',border:'#67E8F9'},
+  {id:'lime',dot:'#3F6212',bg:'#ECFCCB',text:'#365314',border:'#A3E635'},
+];
+const MONTHS=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+const DAYS=['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
+const DEFAULT_TYPES=['Meeting','Development','Code Review','On-call','Cuti','Training'];
+const DEFAULT_ADMIN_PW='admin123';
+const LOG_MAX=50;
+const STATUSES=[
+  {id:'',label:'— Tanpa status'},
+  {id:'urgent',label:'Urgent'},
+  {id:'pending',label:'Pending'},
+  {id:'on_progress',label:'On Progress'},
+  {id:'done',label:'Done'},
+];
+
+const toKey=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const today=()=>toKey(new Date());
+const fmtDate=k=>{if(!k)return'';const[y,m,d]=k.split('-');return `${parseInt(d)} ${MONTHS[parseInt(m)-1]} ${y}`;};
+const fmtTime=iso=>{if(!iso)return'';const d=new Date(iso);return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;};
+const fmtDT=iso=>{if(!iso)return'';const d=new Date(iso);return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;};
+const getColor=id=>COLORS.find(c=>c.id===id)||COLORS[0];
+const statusLabel=id=>STATUSES.find(s=>s.id===id)?.label||'';
+
+// Date range helper: returns array of dateKeys between start and end (inclusive)
+const dateRange=(startKey,endKey)=>{
+  const arr=[], s=new Date(startKey+'T00:00:00'), e=new Date(endKey+'T00:00:00');
+  if(s>e) return [startKey];
+  const cur=new Date(s);
+  while(cur<=e){arr.push(toKey(cur));cur.setDate(cur.getDate()+1);}
+  return arr;
+};
+
+// Notes helpers — structured format stored as JSON array
+// Each item: {type:'bab'|'subbab'|'content', text:'...'}
+const parseNotes=notes=>{
+  if(!notes)return[];
+  try{const p=JSON.parse(notes);if(Array.isArray(p))return p;}catch(e){}
+  // backward compat: plain string → content bullets
+  return notes.split('\n').filter(l=>l.trim()).map(l=>({type:'content',text:l}));
+};
+const serializeNotes=items=>JSON.stringify(items); // keep empty rows during editing
+
+const renderStructuredNotes=(notes,col)=>{
+  const items=parseNotes(notes).filter(i=>i.text.trim());
+  if(!items.length)return null;
+  let subIdx=0;
+  return items.map((item,i)=>{
+    if(item.type==='subbab')subIdx++;
+    else if(item.type==='bab')subIdx=0;
+    const n=subIdx;
+    return S('div',{key:i,style:{marginTop:i===0?0:4}},
+      item.type==='bab'
+        ?S('div',{style:{fontWeight:700,fontSize:14,color:col,marginTop:i===0?0:8,paddingLeft:0}},item.text)
+        :item.type==='subbab'
+          ?S('div',{style:{display:'flex',gap:5,alignItems:'flex-start',paddingLeft:16}},
+              S('span',{style:{color:col,fontSize:12,flexShrink:0}},'•'),
+              S('span',{style:{fontSize:12,color:col,lineHeight:1.4}},item.text)
+            )
+          :S('div',{style:{display:'flex',gap:5,alignItems:'flex-start',paddingLeft:32}},
+              S('span',{style:{color:col,fontSize:12,flexShrink:0,fontWeight:700,opacity:0.6}},'*'),
+              S('span',{style:{fontSize:12,color:col,lineHeight:1.4,opacity:0.8}},item.text)
+            )
+    );
+  });
+};
+
+// ── Sync badge ──────────────────────────────────────────────
+function SyncBadge({status}){
+  const cfg={
+    connecting:{color:'#B45309',bg:'#FEF3C7',icon:'ti-wifi',label:'Menghubungkan...',cls:'pulse'},
+    synced:{color:'#065F46',bg:'#D1FAE5',icon:'ti-cloud-check',label:'Tersinkron',cls:''},
+    error:{color:'#BE123C',bg:'#FFE4E6',icon:'ti-wifi-off',label:'Offline',cls:''},
+  }[status]||{};
+  return S('div',{style:{display:'flex',alignItems:'center',gap:4,padding:'4px 9px',background:cfg.bg,borderRadius:20,fontSize:'11px',color:cfg.color,fontWeight:500,flexShrink:0}},
+    S('i',{className:`ti ${cfg.icon} ${cfg.cls}`,style:{fontSize:13}}),cfg.label
+  );
+}
+
+// ── Admin modal ─────────────────────────────────────────────
+function AdminModal({onSuccess,onCancel,storedPw}){
+  const [pw,setPw]=useState(''), [err,setErr]=useState(false);
+  const submit=()=>{
+    if(pw===(storedPw||DEFAULT_ADMIN_PW)){onSuccess();}
+    else{setErr(true);setPw('');setTimeout(()=>setErr(false),2000);}
+  };
+  return S('div',{className:'modal-bg modal-center',onClick:e=>e.target===e.currentTarget&&onCancel()},
+    S('div',{className:'modal'},
+      S('div',{style:{textAlign:'center',marginBottom:20}},
+        S('div',{style:{width:52,height:52,borderRadius:'50%',background:'#1D4ED8',margin:'0 auto 12px',display:'flex',alignItems:'center',justifyContent:'center'}},
+          S('i',{className:'ti ti-shield-lock',style:{fontSize:24,color:'#fff'}})),
+        S('h2',{style:{fontSize:'17px',fontWeight:700,marginBottom:4}},'Login Admin'),
+        S('p',{style:{fontSize:'13px',color:'#86868b'}},'Masukkan password admin')
+      ),
+      S('input',{type:'password',placeholder:'Password',value:pw,autoFocus:true,
+        onChange:e=>setPw(e.target.value),onKeyDown:e=>e.key==='Enter'&&submit(),
+        style:{minHeight:46,marginBottom:8,textAlign:'center',fontSize:'18px',letterSpacing:4,
+          border:err?'1.5px solid #BE123C':'0.5px solid #d1d1d6'}}),
+      err&&S('p',{style:{fontSize:'12px',color:'#BE123C',textAlign:'center',marginBottom:8}},'Password salah'),
+      S('div',{style:{display:'flex',gap:8}},
+        S('button',{onClick:onCancel,style:{flex:1,minHeight:44}},'Batal'),
+        S('button',{onClick:submit,style:{flex:2,minHeight:44,background:'#1D4ED8',color:'#fff',border:'none',borderRadius:8,fontSize:'14px',fontWeight:600}},
+          S('i',{className:'ti ti-lock-open',style:{marginRight:6}}),'Masuk')
+      )
+    )
+  );
+}
+
+
+// ── Bullet Input Component (Header / Content / Notes) ──────────
+// Type mapping: bab=Header, subbab=Content(•), content=Notes(*)
+const TYPE_CFG = {
+  bab:    {label:'H',  title:'Header',  prefix:'',  ph:'Header...'},
+  subbab: {label:'•',  title:'Content', prefix:'•', ph:'Content...'},
+  content:{label:'*',  title:'Notes',   prefix:'*', ph:'Notes...'},
+};
+
+function BulletInput({value, onChange}){
+  const raw = parseNotes(value);
+  const items = raw.length ? raw : [{type:'subbab',text:''}];
+
+  const update = newItems => {
+    const safe = newItems.length ? newItems : [{type:'subbab',text:''}];
+    onChange(serializeNotes(safe));
+  };
+
+  const setItem  = (idx, ch) => update(items.map((it,i)=>i===idx?{...it,...ch}:it));
+  const addItem  = (afterIdx, type) => {
+    const next = [...items];
+    next.splice(afterIdx+1, 0, {type, text:''});
+    update(next);
+    setTimeout(()=>{
+      const fields = document.querySelectorAll('.bi-field');
+      if(fields[afterIdx+1]) fields[afterIdx+1].focus();
+    }, 30);
+  };
+  const removeItem = idx => {
+    const next = items.filter((_,i)=>i!==idx);
+    update(next.length ? next : [{type:'subbab',text:''}]);
+    setTimeout(()=>{
+      const fields = document.querySelectorAll('.bi-field');
+      const target = fields[Math.max(0,idx-1)];
+      if(target) target.focus();
+    }, 30);
+  };
+  const handleKey = (e, idx) => {
+    if(e.key==='Enter'){
+      e.preventDefault();
+      // Header → next is Content; others → same type
+      addItem(idx, items[idx].type==='bab'?'subbab':items[idx].type);
+    }
+    if(e.key==='Backspace' && items[idx].text==='' && items.length>1){
+      e.preventDefault();
+      removeItem(idx);
+    }
+  };
+
+  return S('div',{style:{border:'0.5px solid #d1d1d6',borderRadius:10,overflow:'hidden',background:'#fff'}},
+    items.map((item, idx)=>{
+      const cfg = TYPE_CFG[item.type]||TYPE_CFG.subbab;
+      const isBab = item.type==='bab';
+      return S('div',{key:idx,style:{
+        display:'flex',alignItems:'center',gap:6,padding:'5px 8px',
+        borderBottom:idx<items.length-1?'0.5px solid #f2f2f7':'none',
+        background:isBab?'#f8f8fb':'#fff',
+        paddingLeft: item.type==='bab'?8:item.type==='subbab'?20:34,
+      }},
+        // Type selector (3 small buttons)
+        S('div',{style:{display:'flex',gap:2,flexShrink:0}},
+          Object.entries(TYPE_CFG).map(([t,c])=>
+            S('button',{key:t, onClick:()=>setItem(idx,{type:t}), title:c.title,
+              style:{
+                padding:'1px 5px',fontSize:'10px',minHeight:22,minWidth:22,
+                background:item.type===t?'#1d1d1f':'transparent',
+                color:item.type===t?'#fff':'#b0b0b8',
+                border:'0.5px solid '+(item.type===t?'#1d1d1f':'#e0e0e5'),
+                borderRadius:4,cursor:'pointer',fontWeight:700,lineHeight:1,
+              }
+            }, c.label)
+          )
+        ),
+        // Prefix
+        !isBab && S('span',{style:{
+          fontSize:13, color:'#a0a0a8', flexShrink:0, minWidth:14, userSelect:'none',
+          fontWeight: item.type==='content'?700:400,
+        }}, cfg.prefix),
+        // Input
+        S('input',{
+          className:'bi-field',
+          type:'text',
+          value:item.text,
+          onChange:e=>setItem(idx,{text:e.target.value}),
+          onKeyDown:e=>handleKey(e,idx),
+          placeholder:cfg.ph,
+          style:{
+            flex:1, border:'none', outline:'none', padding:'2px 0',
+            background:'transparent', color:'#1d1d1f', minHeight:28,
+            fontSize: isBab?15:13,
+            fontWeight: isBab?700:400,
+          }
+        }),
+        // Delete
+        items.length>1 && S('button',{onClick:()=>removeItem(idx),
+          style:{minWidth:22,minHeight:22,padding:0,border:'none',background:'transparent',
+            color:'#d0d0d5',cursor:'pointer',flexShrink:0,
+            display:'flex',alignItems:'center',justifyContent:'center'}},
+          S('i',{className:'ti ti-x',style:{fontSize:12}})
+        )
+      );
+    }),
+    // Bottom add buttons
+    S('div',{style:{display:'flex',borderTop:'0.5px solid #f0f0f0'}},
+      [['bab','H','Header'],['subbab','•','Content'],['content','*','Notes']].map(([type,icon,label],bi)=>
+        S('button',{key:type,
+          onClick:()=>addItem(items.length-1, type),
+          style:{
+            flex:1, fontSize:'11px', padding:'7px 4px',
+            color:'#0071e3', background:'#f9f9fb',
+            border:'none',
+            borderRight: bi<2?'0.5px solid #f0f0f0':'none',
+            cursor:'pointer',
+            display:'flex',alignItems:'center',justifyContent:'center',gap:3,
+          }},
+          S('span',{style:{fontWeight:700,fontSize:12,color:'#86868b'}},icon),
+          S('span',null,label)
+        )
+      )
+    )
+  );
+}
+
+// ── Add Entry Modal ─────────────────────────────────────────
+function AddEntryModal({engineers,actTypes,isAdmin,user,defaultDate,onSave,onClose}){
+  const myEng = engineers.find(e=>e.name===user);
+  const [selEngs,setSelEngs]=useState(isAdmin?[]:(myEng?[myEng.id]:[]));
+  const [fAct,setFAct]=useState('');
+  const [fNotes,setFNotes]=useState('');
+  const [fStatus,setFStatus]=useState('');
+  const [fStart,setFStart]=useState(defaultDate||today());
+  const [fEnd,setFEnd]=useState(defaultDate||today());
+
+  const toggleEng = id => {
+    if(!isAdmin) return; // non-admin locked to own name
+    setSelEngs(prev=>prev.includes(id)?prev.filter(x=>x!==id):[...prev,id]);
+  };
+
+  const handleSave=()=>{
+    if(!selEngs.length||!fAct) return;
+    const dates=dateRange(fStart,fEnd);
+    selEngs.forEach(engId=>onSave(dates,engId,fAct,fNotes,fStatus));
+    onClose();
+  };
+
+  return S('div',{className:'modal-bg',onClick:e=>e.target===e.currentTarget&&onClose()},
+    S('div',{className:'modal'},
+      S('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}},
+        S('h3',{style:{fontSize:'16px',fontWeight:700}},'Tambah Kegiatan'),
+        S('button',{onClick:onClose,style:{minWidth:36,minHeight:36,padding:4,border:'none',background:'transparent',display:'flex',alignItems:'center',justifyContent:'center'}},
+          S('i',{className:'ti ti-x',style:{fontSize:18}}))
+      ),
+      S('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+        S('div',null,
+          S('label',{style:{fontSize:'12px',color:'#86868b',marginBottom:6,display:'block'}},'Engineer'),
+          isAdmin
+            ? S('div',{style:{display:'flex',flexDirection:'column',gap:4}},
+                engineers.map(e=>{
+                  const col=getColor(e.color);
+                  const sel=selEngs.includes(e.id);
+                  return S('div',{key:e.id,onClick:()=>toggleEng(e.id),style:{
+                    display:'flex',alignItems:'center',gap:10,padding:'8px 12px',
+                    borderRadius:8,cursor:'pointer',border:`1.5px solid ${sel?col.dot:'#e5e5ea'}`,
+                    background:sel?col.bg:'#fff',transition:'all 0.1s',userSelect:'none',
+                  }},
+                    S('div',{style:{width:10,height:10,borderRadius:'50%',background:col.dot,flexShrink:0}}),
+                    S('span',{style:{fontSize:'13px',fontWeight:sel?600:400,color:sel?col.text:'#1d1d1f',flex:1}},e.name),
+                    sel&&S('i',{className:'ti ti-check',style:{fontSize:14,color:col.dot}})
+                  );
+                }),
+                selEngs.length>0&&S('div',{style:{fontSize:'11px',color:'#86868b',marginTop:2,paddingLeft:2}},
+                  `Dipilih: ${selEngs.map(id=>engineers.find(e=>e.id===id)?.name).filter(Boolean).join(' & ')}`
+                )
+              )
+            : S('div',{style:{padding:'10px 12px',background:'#E0E7FF',borderRadius:8,fontSize:'13px',fontWeight:500,color:'#3730A3',display:'flex',alignItems:'center',gap:8}},
+                S('div',{style:{width:9,height:9,borderRadius:'50%',background:getColor(myEng?.color).dot}}),
+                user
+              )
+        ),
+        S('div',null,
+          S('label',{style:{fontSize:'12px',color:'#86868b',marginBottom:4,display:'block'}},'Jenis Kegiatan'),
+          S('select',{value:fAct,onChange:e=>setFAct(e.target.value),style:{minHeight:44}},
+            S('option',{value:''},'Pilih kegiatan...'),
+            actTypes.map(a=>S('option',{key:a,value:a},a))
+          )
+        ),
+        S('div',{style:{display:'flex',gap:10}},
+          S('div',{style:{flex:1}},
+            S('label',{style:{fontSize:'12px',color:'#86868b',marginBottom:4,display:'block'}},'Dari tanggal'),
+            S('input',{type:'date',value:fStart,onChange:e=>{setFStart(e.target.value);if(e.target.value>fEnd)setFEnd(e.target.value);},style:{minHeight:44}})
+          ),
+          S('div',{style:{flex:1}},
+            S('label',{style:{fontSize:'12px',color:'#86868b',marginBottom:4,display:'block'}},'Sampai tanggal'),
+            S('input',{type:'date',value:fEnd,min:fStart,onChange:e=>setFEnd(e.target.value),style:{minHeight:44}})
+          )
+        ),
+        fStart!==fEnd&&S('div',{style:{padding:'8px 10px',background:'#EFF6FF',borderRadius:8,fontSize:'12px',color:'#1E3A8A',display:'flex',alignItems:'center',gap:6}},
+          S('i',{className:'ti ti-info-circle',style:{fontSize:14}}),
+          `Akan dibuat untuk ${dateRange(fStart,fEnd).length} hari${selEngs.length>1?' × '+selEngs.length+' engineer':''}`
+        ),
+        S('div',null,
+          S('label',{style:{fontSize:'12px',color:'#86868b',marginBottom:4,display:'block'}},'Catatan'),
+          React.createElement(BulletInput,{value:fNotes,onChange:setFNotes})
+        ),
+        S('div',null,
+          S('label',{style:{fontSize:'12px',color:'#86868b',marginBottom:4,display:'block'}},'Status'),
+          S('select',{value:fStatus,onChange:e=>setFStatus(e.target.value),style:{minHeight:44}},
+            STATUSES.map(s=>S('option',{key:s.id,value:s.id},s.label))
+          )
+        ),
+        S('div',{style:{display:'flex',gap:8,marginTop:4}},
+          S('button',{onClick:onClose,style:{flex:1,minHeight:44}},'Batal'),
+          S('button',{onClick:handleSave,disabled:!selEngs.length||!fAct,
+            style:{flex:2,minHeight:44,background:'#0071e3',color:'#fff',border:'none',borderRadius:8,fontSize:'14px',fontWeight:600}},
+            'Simpan')
+        )
+      )
+    )
+  );
+}
+
+// ── Edit Entry Modal ────────────────────────────────────────
+function EditEntryModal({entry,actTypes,user,onSave,onClose}){
+  const [fAct,setFAct]=useState(entry.activityType||'');
+  const [fNotes,setFNotes]=useState(entry.notes||'');
+  const [fStatus,setFStatus]=useState(entry.status||'');
+  const handleSave=()=>{
+    onSave({activityType:fAct,notes:fNotes,status:fStatus,editedBy:user,editedAt:new Date().toISOString()});
+    onClose();
+  };
+  return S('div',{className:'modal-bg',onClick:e=>e.target===e.currentTarget&&onClose()},
+    S('div',{className:'modal'},
+      S('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}},
+        S('h3',{style:{fontSize:'16px',fontWeight:700}},'Edit Kegiatan'),
+        S('button',{onClick:onClose,style:{minWidth:36,minHeight:36,padding:4,border:'none',background:'transparent',display:'flex',alignItems:'center',justifyContent:'center'}},
+          S('i',{className:'ti ti-x',style:{fontSize:18}}))
+      ),
+      S('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+        S('div',null,
+          S('label',{style:{fontSize:'12px',color:'#86868b',marginBottom:4,display:'block'}},'Jenis Kegiatan'),
+          S('select',{value:fAct,onChange:e=>setFAct(e.target.value),style:{minHeight:44}},
+            actTypes.map(a=>S('option',{key:a,value:a},a))
+          )
+        ),
+        S('div',null,
+          S('label',{style:{fontSize:'12px',color:'#86868b',marginBottom:4,display:'block'}},'Catatan'),
+          React.createElement(BulletInput,{value:fNotes,onChange:setFNotes})
+        ),
+        S('div',null,
+          S('label',{style:{fontSize:'12px',color:'#86868b',marginBottom:4,display:'block'}},'Status'),
+          S('select',{value:fStatus,onChange:e=>setFStatus(e.target.value),style:{minHeight:44}},
+            STATUSES.map(s=>S('option',{key:s.id,value:s.id},s.label))
+          )
+        ),
+        S('div',{style:{display:'flex',gap:8,marginTop:4}},
+          S('button',{onClick:onClose,style:{flex:1,minHeight:44}},'Batal'),
+          S('button',{onClick:handleSave,disabled:!fAct,
+            style:{flex:2,minHeight:44,background:'#0071e3',color:'#fff',border:'none',borderRadius:8,fontSize:'14px',fontWeight:600}},
+            'Simpan Perubahan')
+        )
+      )
+    )
+  );
+}
+
+// ── Entry card (shared by CalendarView & SummaryView) ───────
+function EntryCard({entry,eng,onDelete,onEdit,canDel,canEdit,showDate}){
+  const col=getColor(eng?.color);
+  const [expanded,setExpanded]=useState(false);
+  return S('div',{style:{background:col.bg,borderRadius:8,padding:'8px 10px',border:`0.5px solid ${col.border}`,marginBottom:6,position:'relative'}},
+    // Header row
+    S('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}},
+      S('div',{style:{flex:1}},
+        S('div',{style:{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}},
+          S('div',{style:{width:8,height:8,borderRadius:'50%',background:col.dot,flexShrink:0}}),
+          S('span',{style:{fontSize:'13px',fontWeight:600,color:col.text}},eng?.name||'?'),
+          showDate&&S('span',{style:{fontSize:'11px',color:col.text,opacity:0.6}},fmtDate(entry.dateKey)),
+          entry.status&&S('span',{style:{fontSize:'11px',color:col.text,fontWeight:500,background:`${col.dot}22`,padding:'1px 7px',borderRadius:20}},statusLabel(entry.status))
+        ),
+        S('div',{style:{fontSize:'13px',fontWeight:500,color:col.text,marginTop:3}},entry.activityType)
+      ),
+      S('div',{style:{display:'flex',gap:4,flexShrink:0}},
+        canEdit&&S('button',{onClick:()=>onEdit(entry),style:{minWidth:30,minHeight:30,padding:3,border:'none',background:'transparent',cursor:'pointer',color:col.dot}},
+          S('i',{className:'ti ti-edit',style:{fontSize:14}})),
+        canDel&&S('button',{onClick:()=>onDelete(entry),style:{minWidth:30,minHeight:30,padding:3,border:'none',background:'transparent',cursor:'pointer',color:'#ff3b30'}},
+          S('i',{className:'ti ti-trash',style:{fontSize:14}}))
+      )
+    ),
+    // Structured notes
+    (()=>{
+      const items=parseNotes(entry.notes||'');
+      if(!items.length||items.every(i=>!i.text.trim()))return null;
+      const visible=expanded?items:items.slice(0,4);
+      return S('div',{style:{marginTop:6,paddingTop:6,borderTop:`0.5px solid ${col.dot}33`}},
+        visible.map((item,i)=>{
+          let subN=0;
+          for(let j=0;j<=items.indexOf(item);j++){
+            if(items[j].type==='bab')subN=0;
+            if(items[j].type==='subbab')subN++;
+          }
+          return S('div',{key:i,style:{marginTop:i===0?0:3}},
+            item.type==='bab'
+              ?S('div',{style:{fontWeight:700,fontSize:14,color:col.text,marginTop:i===0?0:8,paddingLeft:0}},item.text)
+              :item.type==='subbab'
+                ?S('div',{style:{display:'flex',gap:5,alignItems:'flex-start',paddingLeft:16}},
+                    S('span',{style:{color:col.dot,fontSize:12,flexShrink:0,minWidth:10}},'•'),
+                    S('span',{style:{fontSize:12,color:col.text,lineHeight:1.4}},item.text)
+                  )
+                :S('div',{style:{display:'flex',gap:5,alignItems:'flex-start',paddingLeft:32}},
+                    S('span',{style:{color:col.text,fontSize:12,flexShrink:0,fontWeight:700,opacity:0.6}},'*'),
+                    S('span',{style:{fontSize:12,color:col.text,lineHeight:1.4,opacity:0.8}},item.text)
+                  )
+          );
+        }),
+        items.length>4&&S('button',{onClick:()=>setExpanded(!expanded),
+          style:{fontSize:'11px',color:col.dot,background:'transparent',border:'none',cursor:'pointer',marginTop:5,padding:0}},
+          expanded?'Tampilkan lebih sedikit ↑':`+${items.length-4} item lainnya ↓`
+        )
+      );
+    })(),
+    // Edit badge
+    entry.editedAt&&S('div',{style:{marginTop:5,fontSize:'10px',color:col.text,opacity:0.55,display:'flex',alignItems:'center',gap:3}},
+      S('i',{className:'ti ti-pencil',style:{fontSize:11}}),
+      `EDITED · ${fmtDT(entry.editedAt)} · oleh ${entry.editedBy}`
+    ),
+    // Created info
+    S('div',{style:{marginTop:3,fontSize:'10px',color:col.text,opacity:0.45}},
+      `${entry.createdBy} · ${fmtTime(entry.createdAt)}`
+    )
+  );
+}
+
+// ── Main App ────────────────────────────────────────────────
+function App(){
+  const [isDesktop,setIsDesktop]=useState(typeof window!=='undefined'&&window.innerWidth>=768);
+  useEffect(()=>{
+    const h=()=>setIsDesktop(window.innerWidth>=768);
+    window.addEventListener('resize',h);
+    return()=>window.removeEventListener('resize',h);
+  },[]);
+
+  const [engineers,setEngineers]=useState([]);
+  const [actTypes,setActTypes]=useState(DEFAULT_TYPES);
+  const [schedules,setSchedules]=useState({});
+  const [log,setLog]=useState([]);
+  const [adminPw,setAdminPw]=useState(DEFAULT_ADMIN_PW);
+  const [syncStatus,setSyncStatus]=useState('connecting');
+  const [loaded,setLoaded]=useState(false);
+  const [user,setUser]=useState('');
+  const [userRole,setUserRole]=useState('');
+  const [pendingAdmin,setPendingAdmin]=useState(false);
+  const [view,setView]=useState('calendar');
+  const [month,setMonth]=useState(new Date());
+  const [selDate,setSelDate]=useState(null);
+  const [showAddModal,setShowAddModal]=useState(false);
+  const [editEntry,setEditEntry]=useState(null); // {entry, dateKey}
+  const [logExpanded,setLogExpanded]=useState(false);
+  const loadedRef=useRef(false), connCount=useRef(0);
+
+  useEffect(()=>{
+    const listeners=[];
+    const onConn=()=>{connCount.current++;if(connCount.current>=4&&!loadedRef.current){loadedRef.current=true;setSyncStatus('synced');setLoaded(true);}};
+    const listen=(path,setter,transform)=>{
+      const r=fref(path);
+      const h=snap=>{
+        const v=snap.val();
+        setter(v?(transform?transform(v):v):(path.includes('schedules')?{}:[]));
+        onConn();
+      };
+      r.on('value',h,()=>setSyncStatus('error'));
+      listeners.push({r,h});
+    };
+    listen('wkcal/engineers',setEngineers,v=>Object.values(v));
+    listen('wkcal/actTypes',setActTypes,v=>Object.values(v));
+    listen('wkcal/schedules',setSchedules,null);
+    listen('wkcal/log',setLog,v=>Object.values(v).sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp)));
+    const pwRef=fref('wkcal/config/adminPw');
+    const pwH=snap=>{setAdminPw(snap.val()||DEFAULT_ADMIN_PW);onConn();};
+    pwRef.on('value',pwH,()=>setSyncStatus('error'));
+    listeners.push({r:pwRef,h:pwH});
+    db.ref('.info/connected').on('value',s=>{if(loadedRef.current)setSyncStatus(s.val()?'synced':'connecting');});
+    const t=setTimeout(()=>{if(!loadedRef.current){loadedRef.current=true;setSyncStatus('synced');setLoaded(true);}},6000);
+    return()=>{listeners.forEach(({r,h})=>r.off('value',h));clearTimeout(t);};
+  },[]);
+
+  const fbSet=(path,data)=>fref(path).set(data).catch(()=>setSyncStatus('error'));
+  const saveEng=engs=>fbSet('wkcal/engineers',engs.reduce((a,e)=>{a[e.id]=e;return a;},{}));
+  const saveAct=acts=>fbSet('wkcal/actTypes',acts.reduce((a,t,i)=>{a[`a${i}`]=t;return a;},{}));
+  const saveSch=sch=>fbSet('wkcal/schedules',sch);
+  const saveLog=entries=>{const t=entries.slice(0,LOG_MAX);fbSet('wkcal/log',t.reduce((a,e)=>{a[e.id]=e;return a;},{}));};
+  const addLog=(entry,cur)=>saveLog([entry,...cur]);
+
+  const handleUserSelect=val=>{
+    if(val==='__admin__'){setPendingAdmin(true);return;}
+    const eng=engineers.find(e=>e.id===val);
+    if(eng){setUser(eng.name);setUserRole(eng.role||'input');}
+    else{setUser('');setUserRole('');}
+  };
+
+  const isAdmin=userRole==='admin';
+  const canInput=userRole==='input'||isAdmin;
+
+  // Add entries (supports range, called once per engineer from modal)
+  const handleAddEntries=(dates,engId,actType,notes,status)=>{
+    const eng=engineers.find(e=>e.id===engId);
+    let upd={...schedules};
+    dates.forEach(dateKey=>{
+      const entry={id:`${Date.now()}_${Math.random().toString(36).slice(2,7)}_${dateKey}`,engineerId:engId,activityType:actType,notes,status,createdBy:user,createdAt:new Date().toISOString()};
+      upd[dateKey]=[...(upd[dateKey]||[]),entry];
+    });
+    saveSch(upd);
+    const msg=dates.length>1
+      ?`${user} menambahkan "${actType}" untuk ${eng?.name} (${fmtDate(dates[0])} – ${fmtDate(dates[dates.length-1])})`
+      :`${user} menambahkan "${actType}" untuk ${eng?.name}`;
+    addLog({id:`${Date.now()}_l`,action:'tambah',message:msg,date:dates[0],timestamp:new Date().toISOString()},log);
+  };
+
+  // Edit entry
+  const handleEditEntry=(dateKey,entryId,changes)=>{
+    const upd={...schedules,[dateKey]:(schedules[dateKey]||[]).map(e=>e.id===entryId?{...e,...changes}:e)};
+    saveSch(upd);
+    const entry=(schedules[dateKey]||[]).find(e=>e.id===entryId);
+    const eng=engineers.find(e=>e.id===entry?.engineerId);
+    addLog({id:`${Date.now()}_l`,action:'edit',message:`${user} mengedit "${entry?.activityType}" milik ${eng?.name} pada ${fmtDate(dateKey)}`,date:dateKey,timestamp:new Date().toISOString()},log);
+  };
+
+  // Delete entry
+  const handleDeleteEntry=(dateKey,entryId)=>{
+    const entry=(schedules[dateKey]||[]).find(e=>e.id===entryId);
+    const eng=engineers.find(e=>e.id===entry?.engineerId);
+    saveSch({...schedules,[dateKey]:(schedules[dateKey]||[]).filter(e=>e.id!==entryId)});
+    if(entry)addLog({id:`${Date.now()}_l`,action:'hapus',message:`${user} menghapus "${entry?.activityType}" milik ${eng?.name} pada ${fmtDate(dateKey)}`,date:dateKey,timestamp:new Date().toISOString()},log);
+  };
+
+  // Calendar helpers
+  const yr=month.getFullYear(),mo=month.getMonth();
+  const firstDay=new Date(yr,mo,1).getDay(), daysInMo=new Date(yr,mo+1,0).getDate();
+  const todayKey=today();
+  const dk=d=>`${yr}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  const engsOnDate=dateKey=>{
+    const ids=[...new Set((schedules[dateKey]||[]).map(e=>e.engineerId))];
+    return ids.map(id=>engineers.find(e=>e.id===id)).filter(Boolean);
+  };
+
+  const tabStyle=active=>({
+    flex:1,padding:'8px 0',fontSize:'12px',border:'none',background:'transparent',
+    color:active?'#0071e3':'#86868b',
+    borderBottom:active?'2px solid #0071e3':'2px solid transparent',
+    cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:3,
+  });
+
+  if(!loaded)return S('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',gap:16,background:'#fff'}},
+    S('div',{style:{width:48,height:48,borderRadius:'50%',border:'3px solid #DBEAFE',borderTop:'3px solid #1D4ED8',animation:'spin 0.8s linear infinite'}}),
+    S('p',{style:{fontSize:'14px',color:'#86868b'}},'Menghubungkan ke Firebase...')
+  );
+
+  const visibleLogs=log.slice(0,logExpanded?10:5);
+
+  return S('div',null,
+    pendingAdmin&&S(AdminModal,{storedPw:adminPw,onSuccess:()=>{setPendingAdmin(false);setUser('Admin');setUserRole('admin');},onCancel:()=>setPendingAdmin(false)}),
+    showAddModal&&S(AddEntryModal,{engineers,actTypes,isAdmin,user,defaultDate:selDate||todayKey,
+      onSave:handleAddEntries,onClose:()=>setShowAddModal(false)}),
+    editEntry&&S(EditEntryModal,{entry:editEntry.entry,actTypes,user,
+      onSave:changes=>handleEditEntry(editEntry.dateKey,editEntry.entry.id,changes),
+      onClose:()=>setEditEntry(null)}),
+
+    // DESKTOP layout
+    isDesktop&&S('div',{className:'app-shell'},
+      // Left panel: header + tabs + calendar
+      S('div',{className:'left-panel'},
+        // Header
+        S('div',{style:{padding:'14px 16px 10px',borderBottom:'0.5px solid #e5e5ea'}},
+          S('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
+            S('div',null,
+              S('h1',{style:{fontSize:'20px',fontWeight:700,color:'#1d1d1f',letterSpacing:'-0.3px'}},'Engineering Calendar'),
+              S('p',{style:{fontSize:'12px',color:'#86868b',marginTop:1}},'Jadwal engineer')
+            ),
+            S(SyncBadge,{status:syncStatus})
+          ),
+          S('select',{
+            value:userRole===''?'':(isAdmin?'__admin__':(engineers.find(e=>e.name===user)?.id||'')),
+            onChange:e=>handleUserSelect(e.target.value),
+            style:{fontSize:'13px',width:'100%',minHeight:40}
+          },
+            S('option',{value:''},'👤  Kamu siapa? Pilih namamu...'),
+            engineers.map(e=>S('option',{key:e.id,value:e.id},`${e.name}${e.role==='view'?' (View only)':''}`)),
+            S('option',{value:'__admin__'},'🔐  Admin')
+          )
+        ),
+        user&&S('div',{style:{margin:'6px 16px 0',padding:'6px 10px',
+            background:isAdmin?'#1E3A8A':'#f2f2f7',borderRadius:8,
+            display:'flex',alignItems:'center',justifyContent:'space-between'}},
+          S('div',{style:{display:'flex',alignItems:'center',gap:6}},
+            isAdmin
+              ?S('i',{className:'ti ti-shield-filled',style:{fontSize:14,color:'#93C5FD'}})
+              :S('div',{style:{width:9,height:9,borderRadius:'50%',background:getColor(engineers.find(e=>e.name===user)?.color||'indigo').dot,flexShrink:0}}),
+            S('span',{style:{fontSize:'12px',color:isAdmin?'#DBEAFE':'#86868b'}},'Aktif sebagai'),
+            S('span',{style:{fontSize:'12px',fontWeight:600,color:isAdmin?'#fff':'#1d1d1f',marginLeft:2}},user)
+          ),
+          S('span',{style:{fontSize:'11px',padding:'2px 8px',borderRadius:20,
+              background:isAdmin?'#3730A3':userRole==='view'?'#FEF3C7':'#D1FAE5',
+              color:isAdmin?'#C7D2FE':userRole==='view'?'#92400E':'#065F46',fontWeight:500}},
+            isAdmin?'Super Admin':userRole==='view'?'View Only':'Can Input')
+        ),
+        // Tabs
+        S('div',{style:{display:'flex',borderBottom:'0.5px solid #e5e5ea',marginTop:6}},
+          [['calendar','ti-calendar','Kalender'],['summary','ti-list-details','Summary'],['log','ti-history','Log'],['settings','ti-settings','Pengaturan']].map(([id,ico,lbl])=>
+            S('button',{key:id,onClick:()=>setView(id),style:tabStyle(view===id)},
+              S('i',{className:`ti ${ico}`,style:{fontSize:14}}),lbl
+            )
+          )
+        ),
+        // Calendar grid always visible in left panel
+        S('div',{style:{padding:'12px 12px 0'}},
+          S('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
+            S('button',{onClick:()=>setMonth(new Date(yr,mo-1,1)),style:{minWidth:44,minHeight:44,fontSize:'16px'}},S('i',{className:'ti ti-chevron-left'})),
+            S('span',{style:{fontSize:'14px',fontWeight:600}},`${MONTHS[mo]} ${yr}`),
+            S('button',{onClick:()=>setMonth(new Date(yr,mo+1,1)),style:{minWidth:44,minHeight:44,fontSize:'16px'}},S('i',{className:'ti ti-chevron-right'}))
+          ),
+          S('div',{style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:2}},
+            DAYS.map(d=>S('div',{key:d,style:{textAlign:'center',fontSize:'11px',color:'#86868b',padding:'2px 0',fontWeight:500}},d))
+          ),
+          S('div',{style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2}},
+            [...Array(firstDay)].map((_,i)=>S('div',{key:`e${i}`})),
+            [...Array(daysInMo)].map((_,i)=>{
+              const day=i+1,dateKey=dk(day),isToday=dateKey===todayKey,isSel=dateKey===selDate;
+              const engs=engsOnDate(dateKey);
+              return S('div',{key:dateKey,onClick:()=>setSelDate(isSel?null:dateKey),className:'cal-grid-cell',style:{
+                border:isSel?'2px solid #0071e3':isToday?'1.5px solid #a8a8b3':'0.5px solid #e5e5ea',
+                borderRadius:8,padding:'4px 3px',cursor:'pointer',
+                background:isSel?'#EFF6FF':'#fff',WebkitUserSelect:'none',userSelect:'none',
+              }},
+                S('div',{style:{fontSize:'12px',fontWeight:isToday?700:400,color:isToday?'#0071e3':'#1d1d1f',textAlign:'center',marginBottom:3}},day),
+                S('div',{style:{display:'flex',flexWrap:'wrap',gap:2,justifyContent:'center'}},
+                  engs.slice(0,5).map(eng=>S('div',{key:eng.id,style:{width:8,height:8,borderRadius:'50%',background:getColor(eng.color).dot}})),
+                  engs.length>5&&S('span',{style:{fontSize:'9px',color:'#86868b'}},`+${engs.length-5}`)
+                )
+              );
+            })
+          ),
+          engineers.length>0&&S('div',{style:{marginTop:10,display:'flex',flexWrap:'wrap',gap:8,paddingBottom:12}},
+            engineers.map(eng=>S('div',{key:eng.id,style:{display:'flex',alignItems:'center',gap:5,fontSize:'12px',color:'#86868b'}},
+              S('div',{style:{width:8,height:8,borderRadius:'50%',background:getColor(eng.color).dot,flexShrink:0}}),eng.name
+            ))
+          )
+        )
+      ),
+
+      // Right panel: changes based on tab
+      S('div',{className:'right-panel'},
+        // Calendar tab: day detail
+        view==='calendar'&&(!selDate
+          ?S('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'70vh',color:'#86868b',gap:12}},
+              S('i',{className:'ti ti-calendar-search',style:{fontSize:56,opacity:0.25}}),
+              S('p',{style:{fontSize:'15px',fontWeight:500}},'Pilih tanggal untuk lihat detail'),
+              S('p',{style:{fontSize:'13px',opacity:0.7}},'Klik tanggal di kalender sebelah kiri'),
+              engineers.length===0&&S('button',{onClick:()=>setView('settings'),style:{fontSize:'13px',minHeight:40,padding:'0 16px',marginTop:4}},'Tambah Engineer')
+            )
+          :S('div',null,
+              S('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}},
+                S('h2',{style:{fontSize:'20px',fontWeight:700,color:'#1d1d1f'}},fmtDate(selDate)),
+                S('div',{style:{display:'flex',gap:8}},
+                  canInput&&S('button',{onClick:()=>setShowAddModal(true),style:{fontSize:'13px',minHeight:40,display:'flex',alignItems:'center',gap:5,padding:'0 16px'}},
+                    S('i',{className:'ti ti-plus',style:{fontSize:15}}),'Tambah'),
+                  S('button',{onClick:()=>setSelDate(null),style:{minHeight:40,minWidth:40,display:'flex',alignItems:'center',justifyContent:'center',padding:0}},
+                    S('i',{className:'ti ti-x',style:{fontSize:18}}))
+                )
+              ),
+              !user&&S('div',{style:{padding:'12px 16px',background:'#fff9e6',fontSize:'13px',color:'#854F0B',borderRadius:10,marginBottom:16,display:'flex',alignItems:'center',gap:8}},
+                S('i',{className:'ti ti-info-circle',style:{fontSize:16}}),'Pilih namamu di atas untuk menambah jadwal'),
+              userRole==='view'&&S('div',{style:{padding:'12px 16px',background:'#EFF6FF',fontSize:'13px',color:'#1E3A8A',borderRadius:10,marginBottom:16,display:'flex',alignItems:'center',gap:8}},
+                S('i',{className:'ti ti-eye',style:{fontSize:16}}),'Kamu punya akses view only'),
+              (schedules[selDate]||[]).length===0&&S('div',{style:{padding:'60px',textAlign:'center',fontSize:'15px',color:'#86868b',background:'#f9f9fb',borderRadius:12}},
+                S('i',{className:'ti ti-calendar-off',style:{fontSize:44,display:'block',marginBottom:12}}),
+                'Belum ada kegiatan di tanggal ini'
+              ),
+              (schedules[selDate]||[]).map(entry=>{
+                const eng=engineers.find(e=>e.id===entry.engineerId);
+                const canDel=isAdmin||(canInput&&entry.createdBy===user);
+                const canEdit=isAdmin||(canInput&&entry.createdBy===user);
+                return S(EntryCard,{key:entry.id,entry:{...entry,dateKey:selDate},eng,
+                  onDelete:()=>handleDeleteEntry(selDate,entry.id),
+                  onEdit:()=>setEditEntry({entry:{...entry,dateKey:selDate},dateKey:selDate}),
+                  canDel,canEdit,showDate:false});
+              })
+            )
+        ),
+        // Summary tab
+        view==='summary'&&React.createElement(SummaryView,{schedules,engineers,actTypes,isAdmin,canInput,user,
+          onEdit:(dateKey,entry)=>setEditEntry({entry:{...entry,dateKey},dateKey}),
+          onDelete:(dateKey,entryId)=>handleDeleteEntry(dateKey,entryId),
+          onStatusChange:(dateKey,entryId,status)=>{
+            const entry=(schedules[dateKey]||[]).find(e=>e.id===entryId);
+            const eng=engineers.find(e=>e.id===entry?.engineerId);
+            saveSch({...schedules,[dateKey]:(schedules[dateKey]||[]).map(e=>e.id===entryId?{...e,status,editedBy:user,editedAt:new Date().toISOString()}:e)});
+            addLog({id:`${Date.now()}_l`,action:'edit',message:`${user} mengubah status "${entry?.activityType}" milik ${eng?.name} menjadi "${statusLabel(status)}"`,date:dateKey,timestamp:new Date().toISOString()},log);
+          }
+        }),
+        // Log tab
+        view==='log'&&S('div',null,
+          S('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}},
+            S('h2',{style:{fontSize:'20px',fontWeight:700}},'Activity Log'),
+            S('span',{style:{fontSize:'13px',color:'#86868b'}},`${log.length} entri`)
+          ),
+          log.length===0&&S('div',{style:{textAlign:'center',padding:'60px 0',color:'#86868b'}},
+            S('i',{className:'ti ti-history',style:{fontSize:48,display:'block',marginBottom:12}}),'Belum ada aktivitas'),
+          visibleLogs.map(l=>S('div',{key:l.id,style:{border:'0.5px solid #e5e5ea',borderRadius:10,padding:'12px 16px',background:'#fff',marginBottom:8,maxWidth:700}},
+            S('div',{style:{display:'flex',alignItems:'flex-start',gap:10}},
+              S('i',{className:`ti ${l.action==='tambah'?'ti-circle-plus':l.action==='edit'?'ti-circle-dot':'ti-circle-minus'}`,
+                style:{fontSize:18,color:l.action==='tambah'?'#30d158':l.action==='edit'?'#0071e3':'#ff3b30',marginTop:2,flexShrink:0}}),
+              S('div',null,
+                S('div',{style:{fontSize:'14px',color:'#1d1d1f'}},l.message),
+                S('div',{style:{fontSize:'12px',color:'#86868b',marginTop:4}},`${fmtDate(l.date)} · ${fmtDT(l.timestamp)}`)
+              )
+            )
+          )),
+          log.length>5&&S('button',{onClick:()=>setLogExpanded(!logExpanded),
+            style:{minHeight:40,marginTop:4,display:'flex',alignItems:'center',gap:6,fontSize:'13px',color:'#0071e3',background:'#EFF6FF',border:'0.5px solid #BFDBFE',borderRadius:8,padding:'0 16px'}},
+            S('i',{className:`ti ${logExpanded?'ti-chevron-up':'ti-chevron-down'}`}),
+            logExpanded?'Tampilkan lebih sedikit':`Lihat ${Math.min(log.length,10)-5} lainnya`
+          ),
+          isAdmin&&log.length>0&&S('button',{onClick:()=>{if(confirm('Hapus semua log?'))fbSet('wkcal/log',null);},
+            style:{minHeight:40,marginTop:8,fontSize:'13px',color:'#BE123C',background:'#FFF1F2',border:'0.5px solid #FECDD3',borderRadius:8,display:'flex',alignItems:'center',gap:6,padding:'0 16px'}},
+            S('i',{className:'ti ti-trash'}),'Hapus Semua Log (Admin)')
+        ),
+        // Settings tab
+        view==='settings'&&React.createElement(SettingsView,{
+          engineers,actTypes,isAdmin,adminPw,
+          onSaveAdminPw:pw=>fbSet('wkcal/config/adminPw',pw),
+          onSaveEng:saveEng,onSaveAct:saveAct
+        })
+      )
+    ),
+
+    // MOBILE layout
+    !isDesktop&&S('div',{style:{maxWidth:480,margin:'0 auto'}},
+      // Header
+      S('div',{style:{padding:'14px 16px 10px',borderBottom:'0.5px solid #e5e5ea'}},
+        S('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
+          S('div',null,
+            S('h1',{style:{fontSize:'20px',fontWeight:700,color:'#1d1d1f',letterSpacing:'-0.3px'}},'Engineering Calendar'),
+            S('p',{style:{fontSize:'12px',color:'#86868b',marginTop:1}},'Jadwal engineer')
+          ),
+          S(SyncBadge,{status:syncStatus})
+        ),
+        S('select',{
+          value:userRole===''?'':(isAdmin?'__admin__':(engineers.find(e=>e.name===user)?.id||'')),
+          onChange:e=>handleUserSelect(e.target.value),
+          style:{fontSize:'13px',width:'100%',minHeight:40}
+        },
+          S('option',{value:''},'👤  Kamu siapa? Pilih namamu...'),
+          engineers.map(e=>S('option',{key:e.id,value:e.id},`${e.name}${e.role==='view'?' (View only)':''}`)),
+          S('option',{value:'__admin__'},'🔐  Admin')
+        )
+      ),
+      user&&S('div',{style:{margin:'6px 16px 0',padding:'6px 10px',
+          background:isAdmin?'#1E3A8A':'#f2f2f7',borderRadius:8,
+          display:'flex',alignItems:'center',justifyContent:'space-between'}},
+        S('div',{style:{display:'flex',alignItems:'center',gap:6}},
+          isAdmin
+            ?S('i',{className:'ti ti-shield-filled',style:{fontSize:14,color:'#93C5FD'}})
+            :S('div',{style:{width:9,height:9,borderRadius:'50%',background:getColor(engineers.find(e=>e.name===user)?.color||'indigo').dot,flexShrink:0}}),
+          S('span',{style:{fontSize:'12px',color:isAdmin?'#DBEAFE':'#86868b'}},'Aktif sebagai'),
+          S('span',{style:{fontSize:'12px',fontWeight:600,color:isAdmin?'#fff':'#1d1d1f',marginLeft:2}},user)
+        ),
+        S('span',{style:{fontSize:'11px',padding:'2px 8px',borderRadius:20,
+            background:isAdmin?'#3730A3':userRole==='view'?'#FEF3C7':'#D1FAE5',
+            color:isAdmin?'#C7D2FE':userRole==='view'?'#92400E':'#065F46',fontWeight:500}},
+          isAdmin?'Super Admin':userRole==='view'?'View Only':'Can Input')
+      ),
+      S('div',{style:{display:'flex',borderBottom:'0.5px solid #e5e5ea',marginTop:6}},
+        [['calendar','ti-calendar','Kalender'],['summary','ti-list-details','Summary'],['log','ti-history','Log'],['settings','ti-settings','Pengaturan']].map(([id,ico,lbl])=>
+          S('button',{key:id,onClick:()=>{setView(id);if(id!=='calendar')setSelDate(null);},style:tabStyle(view===id)},
+            S('i',{className:`ti ${ico}`,style:{fontSize:14}}),lbl
+          )
+        )
+      ),
+      // Calendar tab mobile
+      view==='calendar'&&S('div',{style:{padding:'12px'}},
+        S('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+          S('button',{onClick:()=>setMonth(new Date(yr,mo-1,1)),style:{minWidth:44,minHeight:44,fontSize:'16px'}},S('i',{className:'ti ti-chevron-left'})),
+          S('span',{style:{fontSize:'15px',fontWeight:600}},`${MONTHS[mo]} ${yr}`),
+          S('button',{onClick:()=>setMonth(new Date(yr,mo+1,1)),style:{minWidth:44,minHeight:44,fontSize:'16px'}},S('i',{className:'ti ti-chevron-right'}))
+        ),
+        S('div',{style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:2}},
+          DAYS.map(d=>S('div',{key:d,style:{textAlign:'center',fontSize:'11px',color:'#86868b',padding:'3px 0',fontWeight:500}},d))
+        ),
+        S('div',{style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2}},
+          [...Array(firstDay)].map((_,i)=>S('div',{key:`e${i}`})),
+          [...Array(daysInMo)].map((_,i)=>{
+            const day=i+1,dateKey=dk(day),isToday=dateKey===todayKey,isSel=dateKey===selDate;
+            const engs=engsOnDate(dateKey);
+            return S('div',{key:dateKey,onClick:()=>setSelDate(isSel?null:dateKey),className:'cal-grid-cell',style:{
+              border:isSel?'1.5px solid #0071e3':isToday?'1px solid #a8a8b3':'0.5px solid #e5e5ea',
+              borderRadius:8,padding:'5px 3px',cursor:'pointer',
+              background:isSel?'#EFF6FF':'#fff',WebkitUserSelect:'none',userSelect:'none',
+            }},
+              S('div',{style:{fontSize:'12px',fontWeight:isToday?700:400,color:isToday?'#0071e3':'#1d1d1f',textAlign:'center',marginBottom:3}},day),
+              S('div',{style:{display:'flex',flexWrap:'wrap',gap:2,justifyContent:'center'}},
+                engs.slice(0,4).map(eng=>S('div',{key:eng.id,style:{width:7,height:7,borderRadius:'50%',background:getColor(eng.color).dot}})),
+                engs.length>4&&S('span',{style:{fontSize:'9px',color:'#86868b'}},`+${engs.length-4}`)
+              )
+            );
+          })
+        ),
+        engineers.length>0&&S('div',{style:{marginTop:10,display:'flex',flexWrap:'wrap',gap:8}},
+          engineers.map(eng=>S('div',{key:eng.id,style:{display:'flex',alignItems:'center',gap:5,fontSize:'12px',color:'#86868b'}},
+            S('div',{style:{width:8,height:8,borderRadius:'50%',background:getColor(eng.color).dot,flexShrink:0}}),eng.name
+          ))
+        ),
+        !selDate&&engineers.length===0&&S('div',{style:{marginTop:20,padding:'24px 16px',background:'#f2f2f7',borderRadius:12,textAlign:'center'}},
+          S('i',{className:'ti ti-users',style:{fontSize:36,color:'#86868b',display:'block',marginBottom:8}}),
+          S('p',{style:{fontSize:'13px',color:'#86868b',marginBottom:12}},'Mulai dengan tambah anggota tim.'),
+          S('button',{onClick:()=>setView('settings'),style:{fontSize:'13px',minHeight:40,padding:'0 16px'}},'Buka Pengaturan')
+        ),
+        !selDate&&engineers.length>0&&S('p',{style:{textAlign:'center',fontSize:'13px',color:'#86868b',marginTop:20}},'Tap tanggal untuk lihat detail'),
+        selDate&&S('div',{style:{marginTop:12,border:'0.5px solid #e5e5ea',borderRadius:12,overflow:'hidden'}},
+          S('div',{style:{padding:'12px 14px',borderBottom:'0.5px solid #e5e5ea',display:'flex',alignItems:'center',justifyContent:'space-between',background:'#fafafa'}},
+            S('span',{style:{fontSize:'14px',fontWeight:600}},fmtDate(selDate)),
+            S('div',{style:{display:'flex',gap:6}},
+              canInput&&S('button',{onClick:()=>setShowAddModal(true),style:{fontSize:'12px',minHeight:36,display:'flex',alignItems:'center',gap:4,padding:'0 10px'}},
+                S('i',{className:'ti ti-plus',style:{fontSize:14}}),'Tambah'),
+              S('button',{onClick:()=>setSelDate(null),style:{minHeight:36,minWidth:36,display:'flex',alignItems:'center',justifyContent:'center',padding:0}},
+                S('i',{className:'ti ti-x',style:{fontSize:16}}))
+            )
+          ),
+          !user&&S('div',{style:{padding:'8px 14px',background:'#fff9e6',fontSize:'12px',color:'#854F0B',borderBottom:'0.5px solid #faeeda',display:'flex',alignItems:'center',gap:6}},
+            S('i',{className:'ti ti-info-circle',style:{fontSize:14}}),'Pilih namamu untuk menambah jadwal'),
+          S('div',{style:{padding:8}},
+            (schedules[selDate]||[]).length===0&&S('div',{style:{padding:'24px',textAlign:'center',fontSize:'13px',color:'#86868b'}},
+              S('i',{className:'ti ti-calendar-off',style:{fontSize:28,display:'block',marginBottom:6}}),'Belum ada kegiatan'),
+            (schedules[selDate]||[]).map(entry=>{
+              const eng=engineers.find(e=>e.id===entry.engineerId);
+              const canDel=isAdmin||(canInput&&entry.createdBy===user);
+              const canEdit=isAdmin||(canInput&&entry.createdBy===user);
+              return S(EntryCard,{key:entry.id,entry:{...entry,dateKey:selDate},eng,
+                onDelete:()=>handleDeleteEntry(selDate,entry.id),
+                onEdit:()=>setEditEntry({entry:{...entry,dateKey:selDate},dateKey:selDate}),
+                canDel,canEdit,showDate:false});
+            })
+          )
+        )
+      ),
+      view==='summary'&&React.createElement(SummaryView,{schedules,engineers,actTypes,isAdmin,canInput,user,
+        onEdit:(dateKey,entry)=>setEditEntry({entry:{...entry,dateKey},dateKey}),
+        onDelete:(dateKey,entryId)=>handleDeleteEntry(dateKey,entryId),
+        onStatusChange:(dateKey,entryId,status)=>{
+          const entry=(schedules[dateKey]||[]).find(e=>e.id===entryId);
+          const eng=engineers.find(e=>e.id===entry?.engineerId);
+          saveSch({...schedules,[dateKey]:(schedules[dateKey]||[]).map(e=>e.id===entryId?{...e,status,editedBy:user,editedAt:new Date().toISOString()}:e)});
+          addLog({id:`${Date.now()}_l`,action:'edit',message:`${user} mengubah status "${entry?.activityType}" milik ${eng?.name} menjadi "${statusLabel(status)}"`,date:dateKey,timestamp:new Date().toISOString()},log);
+        }
+      }),
+      view==='log'&&S('div',{style:{padding:'12px'}},
+        S('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+          S('h2',{style:{fontSize:'16px',fontWeight:600}},'Activity Log'),
+          S('span',{style:{fontSize:'12px',color:'#86868b'}},`${log.length} entri`)
+        ),
+        log.length===0&&S('div',{style:{textAlign:'center',padding:'40px 0',color:'#86868b'}},
+          S('i',{className:'ti ti-history',style:{fontSize:36,display:'block',marginBottom:8}}),'Belum ada aktivitas'),
+        visibleLogs.map(l=>S('div',{key:l.id,style:{border:'0.5px solid #e5e5ea',borderRadius:8,padding:'10px 12px',background:'#fff',marginBottom:6}},
+          S('div',{style:{display:'flex',alignItems:'flex-start',gap:8}},
+            S('i',{className:`ti ${l.action==='tambah'?'ti-circle-plus':l.action==='edit'?'ti-circle-dot':'ti-circle-minus'}`,
+              style:{fontSize:16,color:l.action==='tambah'?'#30d158':l.action==='edit'?'#0071e3':'#ff3b30',marginTop:1,flexShrink:0}}),
+            S('div',null,
+              S('div',{style:{fontSize:'13px',color:'#1d1d1f'}},l.message),
+              S('div',{style:{fontSize:'11px',color:'#86868b',marginTop:2}},`${fmtDate(l.date)} · ${fmtDT(l.timestamp)}`)
+            )
+          )
+        )),
+        log.length>5&&S('button',{onClick:()=>setLogExpanded(!logExpanded),
+          style:{width:'100%',minHeight:40,marginTop:4,display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:'13px',color:'#0071e3',background:'#EFF6FF',border:'0.5px solid #BFDBFE',borderRadius:8}},
+          S('i',{className:`ti ${logExpanded?'ti-chevron-up':'ti-chevron-down'}`}),
+          logExpanded?'Tampilkan lebih sedikit':`Lihat ${Math.min(log.length,10)-5} lainnya`
+        ),
+        isAdmin&&log.length>0&&S('button',{onClick:()=>{if(confirm('Hapus semua log?'))fbSet('wkcal/log',null);},
+          style:{width:'100%',minHeight:40,marginTop:6,fontSize:'13px',color:'#BE123C',background:'#FFF1F2',border:'0.5px solid #FECDD3',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
+          S('i',{className:'ti ti-trash'}),'Hapus Semua Log (Admin)')
+      ),
+      view==='settings'&&React.createElement(SettingsView,{
+        engineers,actTypes,isAdmin,adminPw,
+        onSaveAdminPw:pw=>fbSet('wkcal/config/adminPw',pw),
+        onSaveEng:saveEng,onSaveAct:saveAct
+      })
+    )
+  );
+}
+
+// ── Summary View ────────────────────────────────────────────
+function SummaryView({schedules,engineers,actTypes,isAdmin,canInput,user,onEdit,onDelete,onStatusChange}){
+  const [filterEng,setFilterEng]=useState('');
+  const [filterStatus,setFilterStatus]=useState('');
+  const [filterMonth,setFilterMonth]=useState('');
+  const [filterAct,setFilterAct]=useState('');
+  const [sortBy,setSortBy]=useState('date_desc');
+
+  // Flatten all entries
+  const allEntries=Object.entries(schedules).flatMap(([dateKey,entries])=>
+    (entries||[]).map(e=>({...e,dateKey}))
+  );
+
+  // Filter
+  let filtered=allEntries.filter(e=>{
+    if(filterEng&&e.engineerId!==filterEng)return false;
+    if(filterStatus&&e.status!==filterStatus)return false;
+    if(filterMonth&&!e.dateKey.startsWith(filterMonth))return false;
+    if(filterAct&&e.activityType!==filterAct)return false;
+    return true;
+  });
+
+  // Sort
+  const statusOrder={urgent:0,pending:1,on_progress:2,done:3,'':4};
+  filtered.sort((a,b)=>{
+    if(sortBy==='date_desc')return b.dateKey.localeCompare(a.dateKey);
+    if(sortBy==='date_asc')return a.dateKey.localeCompare(b.dateKey);
+    if(sortBy==='status')return (statusOrder[a.status||'']||4)-(statusOrder[b.status||'']||4);
+    if(sortBy==='engineer'){
+      const ea=engineers.find(e=>e.id===a.engineerId)?.name||'';
+      const eb=engineers.find(e=>e.id===b.engineerId)?.name||'';
+      return ea.localeCompare(eb);
+    }
+    return 0;
+  });
+
+  // Available months from data
+  const months=[...new Set(allEntries.map(e=>e.dateKey.slice(0,7)))].sort().reverse();
+
+  const selStyle=active=>({fontSize:'12px',minHeight:36,flex:1,background:active?'#0071e3':'#fff',color:active?'#fff':'#1d1d1f',border:active?'none':'0.5px solid #d1d1d6',borderRadius:8});
+
+  return S('div',{style:{padding:'12px'}},
+    S('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
+      S('h2',{style:{fontSize:'16px',fontWeight:600}},'Summary'),
+      S('span',{style:{fontSize:'12px',color:'#86868b'}},`${filtered.length} kegiatan`)
+    ),
+
+    // Filters
+    S('div',{style:{display:'flex',flexDirection:'column',gap:6,marginBottom:10,padding:10,background:'#f9f9fb',borderRadius:10,border:'0.5px solid #e5e5ea'}},
+      S('div',{style:{display:'flex',gap:6}},
+        S('select',{value:filterEng,onChange:e=>setFilterEng(e.target.value),style:{flex:1,fontSize:'12px',minHeight:36}},
+          S('option',{value:''},'Semua engineer'),
+          engineers.map(e=>S('option',{key:e.id,value:e.id},e.name))
+        ),
+        S('select',{value:filterStatus,onChange:e=>setFilterStatus(e.target.value),style:{flex:1,fontSize:'12px',minHeight:36}},
+          S('option',{value:''},'Semua status'),
+          STATUSES.filter(s=>s.id).map(s=>S('option',{key:s.id,value:s.id},s.label))
+        )
+      ),
+      S('div',{style:{display:'flex',gap:6}},
+        S('select',{value:filterMonth,onChange:e=>setFilterMonth(e.target.value),style:{flex:1,fontSize:'12px',minHeight:36}},
+          S('option',{value:''},'Semua bulan'),
+          months.map(m=>{const[y,mo]=m.split('-');return S('option',{key:m,value:m},`${MONTHS[parseInt(mo)-1]} ${y}`);})
+        ),
+        S('select',{value:sortBy,onChange:e=>setSortBy(e.target.value),style:{flex:1,fontSize:'12px',minHeight:36}},
+          S('option',{value:'date_desc'},'Tanggal ↓ Terbaru'),
+          S('option',{value:'date_asc'},'Tanggal ↑ Terlama'),
+          S('option',{value:'status'},'Sort: Status'),
+          S('option',{value:'engineer'},'Sort: Engineer')
+        )
+      ),
+      S('select',{value:filterAct,onChange:e=>setFilterAct(e.target.value),style:{width:'100%',fontSize:'12px',minHeight:36}},
+        S('option',{value:''},'Semua jenis kegiatan'),
+        (actTypes||[]).map(a=>S('option',{key:a,value:a},a))
+      ),
+      (filterEng||filterStatus||filterMonth||filterAct)&&S('button',{onClick:()=>{setFilterEng('');setFilterStatus('');setFilterMonth('');setFilterAct('');},
+        style:{fontSize:'12px',minHeight:32,color:'#BE123C',background:'#FFF1F2',border:'0.5px solid #FECDD3',borderRadius:8}},
+        'Hapus semua filter ×')
+    ),
+
+    filtered.length===0&&S('div',{style:{textAlign:'center',padding:'40px 0',color:'#86868b'}},
+      S('i',{className:'ti ti-list-details',style:{fontSize:36,display:'block',marginBottom:8}}),
+      allEntries.length===0?'Belum ada kegiatan':'Tidak ada kegiatan yang cocok dengan filter'
+    ),
+
+    filtered.map(entry=>{
+      const eng=engineers.find(e=>e.id===entry.engineerId);
+      const canDel=isAdmin||(canInput&&entry.createdBy===user);
+      const canEditEntry=isAdmin||(canInput&&entry.createdBy===user);
+      return S('div',{key:`${entry.dateKey}_${entry.id}`},
+        S(EntryCard,{entry,eng,
+          onDelete:()=>onDelete(entry.dateKey,entry.id),
+          onEdit:()=>onEdit(entry.dateKey,entry),
+          canDel,canEdit:canEditEntry,showDate:true}),
+        // Quick status changer
+        (canEditEntry||isAdmin)&&S('div',{style:{display:'flex',gap:4,marginTop:-3,marginBottom:6,paddingLeft:4}},
+          STATUSES.filter(s=>s.id).map(s=>S('button',{key:s.id,
+            onClick:()=>onStatusChange(entry.dateKey,entry.id,entry.status===s.id?'':s.id),
+            style:{fontSize:'11px',padding:'2px 8px',minHeight:26,flex:1,
+              background:entry.status===s.id?'#1d1d1f':'transparent',
+              color:entry.status===s.id?'#fff':'#86868b',
+              border:'0.5px solid #e5e5ea',borderRadius:6}},
+            s.label
+          ))
+        )
+      );
+    })
+  );
+}
+
+// ── Settings View ───────────────────────────────────────────
+function SettingsView({engineers,actTypes,isAdmin,adminPw,onSaveAdminPw,onSaveEng,onSaveAct}){
+  const [sec,setSec]=useState('engineers');
+  const [engName,setEngName]=useState(''),engColor=React.useRef('indigo');
+  const [selColor,setSelColor]=useState('indigo');
+  const [engRole,setEngRole]=useState('input');
+  const [editId,setEditId]=useState(null),[editName,setEditName]=useState('');
+  const [newType,setNewType]=useState('');
+  const [newPw,setNewPw]=useState(''),[pwMsg,setPwMsg]=useState('');
+  const getColor=id=>COLORS.find(c=>c.id===id)||COLORS[0];
+
+  const addEng=()=>{
+    if(!engName.trim())return;
+    onSaveEng([...engineers,{id:`${Date.now()}`,name:engName.trim(),color:selColor,role:engRole}]);
+    setEngName('');setSelColor('indigo');setEngRole('input');
+  };
+  const addType=()=>{
+    if(!newType.trim()||actTypes.includes(newType.trim()))return;
+    onSaveAct([...actTypes,newType.trim()]);setNewType('');
+  };
+  const savePw=()=>{
+    if(!newPw.trim())return;
+    onSaveAdminPw(newPw.trim());setNewPw('');
+    setPwMsg('Password berhasil diubah!');setTimeout(()=>setPwMsg(''),3000);
+  };
+
+  const sBtn=active=>({padding:'7px 10px',fontSize:'13px',minHeight:38,
+    background:active?'#EFF6FF':'transparent',color:active?'#1D4ED8':'#86868b',
+    border:active?'1px solid #93C5FD':'0.5px solid #e5e5ea',borderRadius:8,cursor:'pointer'});
+  const rBtn=active=>({flex:1,fontSize:'12px',minHeight:36,display:'flex',alignItems:'center',justifyContent:'center',gap:4,
+    background:active?'#EFF6FF':'transparent',color:active?'#1D4ED8':'#86868b',
+    border:active?'1px solid #93C5FD':'0.5px solid #e5e5ea',borderRadius:8,cursor:'pointer'});
+
+  const sections=isAdmin?[['engineers','Engineer'],['activities','Kegiatan'],['admin','Admin']]
+    :[['engineers','Engineer'],['activities','Kegiatan']];
+
+  return S('div',{style:{padding:'12px'}},
+    S('h2',{style:{fontSize:'16px',fontWeight:600,marginBottom:12}},'Pengaturan'),
+    S('div',{style:{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap'}},
+      sections.map(([id,lbl])=>S('button',{key:id,onClick:()=>setSec(id),style:sBtn(sec===id)},lbl))
+    ),
+
+    sec==='engineers'&&S('div',null,
+      isAdmin&&S('div',{style:{border:'0.5px solid #e5e5ea',borderRadius:12,padding:12,marginBottom:12,background:'#f9f9fb'}},
+        S('div',{style:{fontSize:'13px',fontWeight:600,marginBottom:8}},'Tambah engineer'),
+        S('input',{type:'text',placeholder:'Nama engineer',value:engName,onChange:e=>setEngName(e.target.value),onKeyDown:e=>e.key==='Enter'&&addEng(),style:{marginBottom:8,minHeight:44}}),
+        S('div',{style:{display:'flex',gap:8,marginBottom:8}},
+          S('button',{onClick:()=>setEngRole('input'),style:rBtn(engRole==='input')},S('i',{className:'ti ti-pencil',style:{fontSize:13}}),'Can Input'),
+          S('button',{onClick:()=>setEngRole('view'),style:rBtn(engRole==='view')},S('i',{className:'ti ti-eye',style:{fontSize:13}}),'View Only')
+        ),
+        S('div',{style:{marginBottom:10}},
+          S('div',{style:{fontSize:'12px',color:'#86868b',marginBottom:6}},'Pilih warna:'),
+          S('div',{style:{display:'flex',gap:7,flexWrap:'wrap'}},
+            COLORS.map(c=>S('div',{key:c.id,onClick:()=>setSelColor(c.id),style:{width:32,height:32,borderRadius:'50%',background:c.dot,cursor:'pointer',border:selColor===c.id?'3px solid #1d1d1f':'3px solid transparent',boxSizing:'border-box',transition:'border 0.1s'}}))
+          )
+        ),
+        S('button',{onClick:addEng,disabled:!engName.trim(),style:{width:'100%',minHeight:44,background:'#0071e3',color:'#fff',border:'none',borderRadius:8,fontSize:'14px',fontWeight:500,display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
+          S('i',{className:'ti ti-user-plus',style:{fontSize:16}}),'Tambah')
+      ),
+      !isAdmin&&S('div',{style:{padding:'10px 12px',background:'#EFF6FF',borderRadius:8,marginBottom:12,fontSize:'12px',color:'#1E3A8A',display:'flex',gap:6}},
+        S('i',{className:'ti ti-info-circle',style:{fontSize:14,flexShrink:0}}),'Login sebagai Admin untuk menambah atau mengedit engineer.'),
+      engineers.length===0&&S('div',{style:{textAlign:'center',padding:'24px',fontSize:'13px',color:'#86868b'}},'Belum ada engineer'),
+      engineers.map(eng=>{
+        const col=getColor(eng.color),isEd=editId===eng.id;
+        return S('div',{key:eng.id,style:{border:'0.5px solid #e5e5ea',borderRadius:8,padding:'10px 12px',background:'#fff',marginBottom:6}},
+          S('div',{style:{display:'flex',alignItems:'center',gap:10}},
+            S('div',{style:{width:34,height:34,borderRadius:'50%',background:col.dot,flexShrink:0}}),
+            S('div',{style:{flex:1}},
+              isEd?S('input',{type:'text',value:editName,autoFocus:true,onChange:e=>setEditName(e.target.value),
+                onKeyDown:e=>{if(e.key==='Enter'){if(editName.trim())onSaveEng(engineers.map(x=>x.id===eng.id?{...x,name:editName.trim()}:x));setEditId(null);}},
+                style:{width:'100%',minHeight:36}})
+              :S('div',null,
+                S('span',{style:{fontSize:'14px',fontWeight:500}},eng.name),
+                S('span',{style:{fontSize:'11px',marginLeft:8,padding:'1px 7px',borderRadius:12,
+                  background:eng.role==='view'?'#FEF3C7':'#D1FAE5',
+                  color:eng.role==='view'?'#92400E':'#065F46'}},
+                  eng.role==='view'?'View Only':'Can Input')
+              )
+            ),
+            isAdmin&&S('button',{onClick:()=>{if(isEd){if(editName.trim())onSaveEng(engineers.map(x=>x.id===eng.id?{...x,name:editName.trim()}:x));setEditId(null);}else{setEditId(eng.id);setEditName(eng.name);}},style:{minWidth:36,minHeight:36,padding:4}},
+              S('i',{className:isEd?'ti ti-check':'ti ti-edit',style:{fontSize:15,color:isEd?'#30d158':'#86868b'}})),
+            isAdmin&&S('button',{onClick:()=>onSaveEng(engineers.filter(e=>e.id!==eng.id)),style:{minWidth:36,minHeight:36,padding:4,color:'#ff3b30'}},
+              S('i',{className:'ti ti-trash',style:{fontSize:15}}))
+          ),
+          isEd&&isAdmin&&S('div',{style:{marginTop:10}},
+            S('div',{style:{display:'flex',gap:8,marginBottom:8}},
+              S('button',{onClick:()=>onSaveEng(engineers.map(x=>x.id===eng.id?{...x,role:'input'}:x)),style:rBtn(eng.role!=='view')},'Can Input'),
+              S('button',{onClick:()=>onSaveEng(engineers.map(x=>x.id===eng.id?{...x,role:'view'}:x)),style:rBtn(eng.role==='view')},'View Only')
+            ),
+            S('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
+              COLORS.map(c=>S('div',{key:c.id,onClick:()=>onSaveEng(engineers.map(x=>x.id===eng.id?{...x,color:c.id}:x)),style:{width:28,height:28,borderRadius:'50%',background:c.dot,cursor:'pointer',border:eng.color===c.id?'3px solid #1d1d1f':'3px solid transparent',boxSizing:'border-box'}}))
+            )
+          )
+        );
+      })
+    ),
+
+    sec==='activities'&&S('div',null,
+      S('div',{style:{border:'0.5px solid #e5e5ea',borderRadius:12,padding:12,marginBottom:12,background:'#f9f9fb'}},
+        S('div',{style:{fontSize:'13px',fontWeight:600,marginBottom:8}},'Tambah jenis kegiatan'),
+        S('div',{style:{display:'flex',gap:8}},
+          S('input',{type:'text',placeholder:'Nama kegiatan baru',value:newType,onChange:e=>setNewType(e.target.value),onKeyDown:e=>e.key==='Enter'&&addType(),style:{minHeight:44}}),
+          S('button',{onClick:addType,disabled:!newType.trim(),style:{minWidth:44,minHeight:44,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',padding:0}},
+            S('i',{className:'ti ti-plus',style:{fontSize:18}}))
+        )
+      ),
+      actTypes.map(type=>S('div',{key:type,style:{border:'0.5px solid #e5e5ea',borderRadius:8,padding:'10px 12px',background:'#fff',marginBottom:6,display:'flex',alignItems:'center',justifyContent:'space-between'}},
+        S('div',{style:{display:'flex',alignItems:'center',gap:8}},
+          S('i',{className:'ti ti-tag',style:{fontSize:15,color:'#86868b'}}),
+          S('span',{style:{fontSize:'14px'}},type)
+        ),
+        isAdmin&&S('button',{onClick:()=>onSaveAct(actTypes.filter(t=>t!==type)),style:{minWidth:36,minHeight:36,padding:4,color:'#ff3b30'}},
+          S('i',{className:'ti ti-trash',style:{fontSize:15}}))
+      ))
+    ),
+
+    sec==='admin'&&isAdmin&&S('div',null,
+      S('div',{style:{border:'1px solid #BFDBFE',borderRadius:12,padding:14,background:'#EFF6FF',marginBottom:12}},
+        S('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:4}},
+          S('i',{className:'ti ti-shield-filled',style:{fontSize:18,color:'#1D4ED8'}}),
+          S('span',{style:{fontSize:'14px',fontWeight:600,color:'#1E3A8A'}},'Super Admin')),
+        S('p',{style:{fontSize:'12px',color:'#3B82F6',lineHeight:1.5}},'Admin bisa edit & hapus semua data, ubah role engineer, dan reset password.')
+      ),
+      S('div',{style:{border:'0.5px solid #e5e5ea',borderRadius:12,padding:12,background:'#f9f9fb'}},
+        S('div',{style:{fontSize:'13px',fontWeight:600,marginBottom:8}},'Ganti Password Admin'),
+        S('input',{type:'password',placeholder:'Password baru',value:newPw,onChange:e=>setNewPw(e.target.value),onKeyDown:e=>e.key==='Enter'&&savePw(),style:{marginBottom:8,minHeight:44}}),
+        S('button',{onClick:savePw,disabled:!newPw.trim(),style:{width:'100%',minHeight:44,background:'#1D4ED8',color:'#fff',border:'none',borderRadius:8,fontSize:'14px',fontWeight:500}},'Simpan Password Baru'),
+        pwMsg&&S('p',{style:{fontSize:'13px',color:'#065F46',textAlign:'center',marginTop:8,fontWeight:500}},S('i',{className:'ti ti-circle-check',style:{marginRight:4}}),pwMsg)
+      )
+    )
+  );
+}
+
+ReactDOM.render(React.createElement(App),document.getElementById('root'));
+</script>
+</body>
+</html>
