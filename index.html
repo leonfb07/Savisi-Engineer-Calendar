@@ -320,7 +320,7 @@ function AddEntryModal({engineers,actTypes,isAdmin,user,defaultDate,onSave,onClo
   const handleSave=()=>{
     if(!selEngs.length||!fAct) return;
     const dates=dateRange(fStart,fEnd);
-    selEngs.forEach(engId=>onSave(dates,engId,fAct,fNotes,fStatus));
+    onSave(dates,selEngs,fAct,fNotes,fStatus); // pass full array, single call
     onClose();
   };
 
@@ -581,18 +581,26 @@ function App(){
   const isAdmin=userRole==='admin';
   const canInput=userRole==='input'||isAdmin;
 
-  // Add entries (supports range, called once per engineer from modal)
-  const handleAddEntries=(dates,engId,actType,notes,status)=>{
-    const eng=engineers.find(e=>e.id===engId);
+  // Add entries — accepts array of engIds, saves ALL in single saveSch call
+  const handleAddEntries=(dates,engIds,actType,notes,status)=>{
+    const engArr=Array.isArray(engIds)?engIds:[engIds];
     let upd={...schedules};
-    dates.forEach(dateKey=>{
-      const entry={id:`${Date.now()}_${Math.random().toString(36).slice(2,7)}_${dateKey}`,engineerId:engId,activityType:actType,notes,status,createdBy:user,createdAt:new Date().toISOString()};
-      upd[dateKey]=[...(upd[dateKey]||[]),entry];
+    const ts=new Date().toISOString();
+    engArr.forEach(engId=>{
+      dates.forEach(dateKey=>{
+        const entry={
+          id:`${Date.now()}_${engId.slice(-4)}_${Math.random().toString(36).slice(2,6)}_${dateKey}`,
+          engineerId:engId,activityType:actType,notes,status,
+          createdBy:user,createdAt:ts
+        };
+        upd[dateKey]=[...(upd[dateKey]||[]),entry];
+      });
     });
     saveSch(upd);
+    const engNames=engArr.map(id=>engineers.find(e=>e.id===id)?.name).filter(Boolean).join(' & ');
     const msg=dates.length>1
-      ?`${user} menambahkan "${actType}" untuk ${eng?.name} (${fmtDate(dates[0])} – ${fmtDate(dates[dates.length-1])})`
-      :`${user} menambahkan "${actType}" untuk ${eng?.name}`;
+      ?`${user} menambahkan "${actType}" untuk ${engNames} (${fmtDate(dates[0])} – ${fmtDate(dates[dates.length-1])})`
+      :`${user} menambahkan "${actType}" untuk ${engNames}`;
     addLog({id:`${Date.now()}_l`,action:'tambah',message:msg,date:dates[0],timestamp:new Date().toISOString()},log);
   };
 
